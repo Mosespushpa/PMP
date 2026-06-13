@@ -155,6 +155,11 @@ const PlaylistManager = (function() {
             throw new Error('Playlist not found.');
         }
         
+        // Ensure itemIds array exists
+        if (!Array.isArray(playlist.itemIds)) {
+            playlist.itemIds = [];
+        }
+        
         // Check if item already exists in playlist
         if (playlist.itemIds.includes(itemId)) {
             throw new Error('Item already exists in playlist.');
@@ -247,9 +252,12 @@ const PlaylistManager = (function() {
             throw new Error('Playlist not found.');
         }
         
+        // Safely handle missing itemIds
+        const itemIds = Array.isArray(playlist.itemIds) ? playlist.itemIds : [];
+        
         // Get all media items
         const items = [];
-        for (const itemId of playlist.itemIds) {
+        for (const itemId of itemIds) {
             const item = await StorageManager.getMediaItem(itemId);
             if (item) {
                 items.push(item);

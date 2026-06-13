@@ -7,6 +7,7 @@ const MediaPlayer = (function() {
     // Media elements
     let currentMediaElement = null;
     let currentItem = null;
+    let mediaContainer = null;
     let isPlaying = false;
     let currentVolume = 0.7;
     let isMuted = false;
@@ -43,6 +44,9 @@ const MediaPlayer = (function() {
     function init() {
         // Set up keyboard shortcuts
         document.addEventListener('keydown', handleKeyPress);
+
+        // Cache the playback container for video preview
+        mediaContainer = document.getElementById('media-player-container');
         
         console.log('MediaPlayer initialized');
     }
@@ -59,6 +63,14 @@ const MediaPlayer = (function() {
         // Set common attributes
         element.preload = 'metadata';
         element.volume = currentVolume;
+        element.className = isVideo ? 'player-video' : 'player-audio';
+        
+        if (isVideo) {
+            element.controls = true;
+            element.playsInline = true;
+            element.style.width = '100%';
+            element.style.maxHeight = '240px';
+        }
         
         // Set up event listeners
         element.addEventListener('loadedmetadata', () => {
@@ -122,6 +134,11 @@ const MediaPlayer = (function() {
                 currentMediaElement.src = URL.createObjectURL(item.fileBlob);
             } else {
                 throw new Error('No file data available');
+            }
+
+            if (mediaContainer) {
+                mediaContainer.innerHTML = '';
+                mediaContainer.appendChild(currentMediaElement);
             }
             
             // Load the media
@@ -219,7 +236,17 @@ const MediaPlayer = (function() {
             currentMediaElement.currentTime = 0;
             
             // Revoke object URL to free memory
-            URL.revokeObjectURL(currentMediaElement.src);
+            if (currentMediaElement.src) {
+                try {
+                    URL.revokeObjectURL(currentMediaElement.src);
+                } catch (error) {
+                    console.warn('Failed to revoke object URL:', error);
+                }
+            }
+
+            if (mediaContainer && mediaContainer.contains(currentMediaElement)) {
+                mediaContainer.removeChild(currentMediaElement);
+            }
             
             currentMediaElement = null;
         }

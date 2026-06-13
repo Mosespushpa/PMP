@@ -46,7 +46,7 @@
     /* Dimensions - Responsive dimensions */
     --sidebar-width: clamp(200px, 20vw, 280px);
     --sidebar-width-collapsed: 60px;
-    --player-bar-height: clamp(70px, 8vh, 90px);
+    --player-bar-height: clamp(56px, 7vh, 72px);
     --top-bar-height: clamp(56px, 7vh, 70px);
     --card-min-width: clamp(140px, 20vw, 200px);
     --card-max-width: clamp(200px, 25vw, 280px);
@@ -417,6 +417,27 @@ body {
 /* =========================
    TOP BAR
    ========================= */
+.sidebar-open-btn {
+    display: none;
+    border: none;
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-primary);
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    margin-right: var(--spacing-md);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    display: inline-flex;
+    transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.sidebar-open-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+    transform: scale(1.02);
+}
+
 .top-bar {
     height: var(--top-bar-height);
     background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
@@ -856,10 +877,41 @@ body {
     background-color: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
     z-index: 200;
     transition: transform var(--transition-normal);
     height: auto;
+    padding: 0.35rem var(--spacing-lg);
+    min-height: var(--player-bar-height);
+}
+
+.media-player-container {
+    position: fixed;
+    bottom: calc(var(--player-bar-height) + 10px);
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    padding: 0 var(--spacing-lg);
+    pointer-events: none;
+    z-index: 199;
+}
+
+.media-player-container video,
+.media-player-container audio {
+    width: min(100%, 420px);
+    max-height: 140px;
+    height: 120px;
+    border-radius: 18px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    background: #000;
+    pointer-events: auto;
+}
+
+.media-player-container audio {
+    display: none;
 }
 
 .player-bar.hidden {
@@ -869,18 +921,21 @@ body {
 .player-info {
     display: flex;
     align-items: center;
-    width: 100%;
-    padding: var(--spacing-md) var(--spacing-lg);
-    background-color: rgba(0, 0, 0, 0.2);
+    width: auto;
+    flex: 1 1 240px;
+    padding: 0.6rem var(--spacing-lg);
+    background-color: rgba(0, 0, 0, 0.15);
+    border-radius: var(--radius-lg);
+    min-width: 0;
 }
 
 .player-poster {
-    width: 56px;
-    height: 56px;
-    border-radius: 6px;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
     object-fit: cover;
-    margin-right: var(--spacing-lg);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    margin-right: var(--spacing-md);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .player-metadata {
@@ -889,17 +944,17 @@ body {
 }
 
 .player-title {
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: var(--spacing-xs);
+    margin-bottom: 0.15rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .player-artist {
-    font-size: var(--font-size-sm);
+    font-size: 0.85rem;
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -910,14 +965,15 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-lg);
-    padding: var(--spacing-lg) var(--spacing-xl);
-    width: 100%;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    flex: 0 0 auto;
+    width: auto;
 }
 
 .control-btn {
-    width: 44px;
-    height: 44px;
+    width: 38px;
+    height: 38px;
     border: none;
     background: none;
     color: var(--text-primary);
@@ -926,7 +982,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--font-size-lg);
+    font-size: 1rem;
     transition: all var(--transition-fast);
 }
 
@@ -938,9 +994,9 @@ body {
 .control-btn-primary {
     background-color: var(--accent-primary);
     color: white;
-    width: 56px;
-    height: 56px;
-    font-size: var(--font-size-xxl);
+    width: 48px;
+    height: 48px;
+    font-size: 1.1rem;
     box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
 }
 
@@ -954,9 +1010,10 @@ body {
     width: 100%;
     display: flex;
     align-items: center;
-    gap: var(--spacing-md);
-    padding: 0 var(--spacing-lg) var(--spacing-md) var(--spacing-lg);
-    background-color: rgba(0, 0, 0, 0.1);
+    gap: 0.75rem;
+    padding: 0 0.75rem 0.35rem 0.75rem;
+    background-color: rgba(0, 0, 0, 0.08);
+    flex: 1 1 100%;
 }
 
 .time-display {
@@ -1012,11 +1069,11 @@ body {
 .player-volume {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    gap: 0.4rem;
 }
 
 .volume-bar {
-    width: 80px;
+    width: 72px;
     height: 4px;
     background: var(--bg-tertiary);
     border-radius: 2px;
@@ -1047,17 +1104,19 @@ body {
 .player-options {
     display: flex;
     align-items: center;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) var(--spacing-lg);
-    width: 100%;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    width: auto;
+    flex: 0 1 auto;
     justify-content: flex-end;
     background-color: rgba(0, 0, 0, 0.05);
+    border-radius: var(--radius-lg);
 }
 
 .player-options .control-btn {
-    width: 40px;
-    height: 40px;
-    font-size: var(--font-size-lg);
+    width: 34px;
+    height: 34px;
+    font-size: 0.95rem;
 }
 
 .player-options .control-btn.active {
@@ -1478,8 +1537,22 @@ body {
         z-index: -1;
     }
     
-    .sidebar-toggle {
+    .sidebar-toggle,
+    .sidebar-open-btn {
         display: flex !important;
+    }
+    
+    .top-bar {
+        padding: 0 var(--spacing-md);
+    }
+
+    .search-container {
+        flex: 1;
+        max-width: none;
+    }
+    
+    .top-bar-actions {
+        gap: var(--spacing-sm);
     }
     
     .media-grid {

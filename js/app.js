@@ -33,7 +33,9 @@
             console.log('MediaPlayer initialized');
             
             // Check if we need to preload media
-            if (!MediaPreloader.isAlreadyPreloaded()) {
+            const existingMedia = await LibraryManager.getAllMedia();
+            const shouldPreload = !MediaPreloader.isAlreadyPreloaded() || existingMedia.length === 0;
+            if (shouldPreload) {
                 console.log('Starting media preloading...');
                 showPreloadProgress();
                 

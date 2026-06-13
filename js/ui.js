@@ -79,6 +79,8 @@ const UIController = (function() {
             songsGrid: document.getElementById('songs-grid'),
             videosGrid: document.getElementById('videos-grid'),
             playlistsGrid: document.getElementById('playlists-grid'),
+            mediaPlayerContainer: document.getElementById('media-player-container'),
+            sidebarOpenBtn: document.getElementById('sidebar-open-btn'),
             
             // Search and filters
             searchInput: document.getElementById('search-input'),
@@ -139,6 +141,9 @@ const UIController = (function() {
         
         // Sidebar toggle
         elements.sidebarToggle.addEventListener('click', toggleSidebar);
+        if (elements.sidebarOpenBtn) {
+            elements.sidebarOpenBtn.addEventListener('click', toggleSidebar);
+        }
         
         // Media type filters
         elements.filterButtons.forEach(btn => {
@@ -270,7 +275,11 @@ const UIController = (function() {
      * Toggle sidebar visibility
      */
     function toggleSidebar() {
-        elements.sidebar.classList.toggle('hidden');
+        if (elements.sidebar.classList.contains('hidden')) {
+            elements.sidebar.classList.remove('hidden');
+        } else {
+            elements.sidebar.classList.add('hidden');
+        }
     }
     
     /**
@@ -540,7 +549,7 @@ const UIController = (function() {
         
         const poster = document.createElement('img');
         poster.className = 'media-poster lazy-image';
-        const posterUrl = item.posterBlob ? LibraryManager.ensurePosterUrl(item) : generateDefaultPosterUrl(item);
+        const posterUrl = LibraryManager.ensurePosterUrl(item) || generateDefaultPosterUrl(item);
         poster.dataset.src = posterUrl;
         poster.alt = sanitizeHTML(item.title || 'Untitled') + ' poster';
         poster.loading = 'lazy';
@@ -1135,6 +1144,7 @@ const UIController = (function() {
             // Create a temporary view for the playlist
             const playlistView = document.createElement('div');
             playlistView.className = 'view playlist-detail-view';
+            playlistView.dataset.playlistId = playlistId;
             playlistView.innerHTML = `
                 <div class="playlist-header">
                     <button class="btn-back" onclick="UIController.navigateTo('playlists')">&larr; Back to Playlists</button>
@@ -1152,6 +1162,7 @@ const UIController = (function() {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             elements.contentView.appendChild(playlistView);
             playlistView.classList.add('active');
+            currentView = 'playlists';
             
             // Render playlist items
             const itemsGrid = playlistView.querySelector('.playlist-items-grid');
@@ -1570,6 +1581,14 @@ const UIController = (function() {
                     await PlaylistManager.addToPlaylist(selectedPlaylistId, item.id);
                     showNotification(`Added "${item.title || 'Item'}" to playlist successfully`);
                     closeAllModals();
+                    await renderPlaylists();
+                    if (currentView === 'playlists') {
+                        await renderPlaylistsView();
+                    }
+                    const activePlaylistDetail = document.querySelector('.playlist-detail-view.active');
+                    if (activePlaylistDetail && activePlaylistDetail.dataset.playlistId === selectedPlaylistId) {
+                        await showPlaylist(selectedPlaylistId);
+                    }
                 } catch (error) {
                     console.error('Error adding item to playlist:', error);
                     showErrorMessage(error.message);

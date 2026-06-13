@@ -580,7 +580,7 @@ const LibraryManager = (function() {
      */
     function ensurePosterUrl(item) {
         if (!item) return '';
-        if (item.posterUrl && item.posterUrl.startsWith('blob:')) {
+        if (item.posterUrl) {
             return item.posterUrl;
         }
         if (item.posterBlob) {
