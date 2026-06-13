@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infrastructure Tests</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .test-pass {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-fail {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Infrastructure Tests</h1>
+        <div id="test-results"></div>
+    </div>
+
+    <!-- Load application scripts -->
+    <script src="../js/utils.js"></script>
+    <script src="../js/storage.js"></script>
+
+    <script>
+        // Test runner
+        const results = document.getElementById('test-results');
+        
+        function logTest(name, passed, message) {
+            const div = document.createElement('div');
+            div.className = `test-result ${passed ? 'test-pass' : 'test-fail'}`;
+            div.textContent = `${passed ? '✓' : '✗'} ${name}: ${message}`;
+            results.appendChild(div);
+        }
+        
+        function logInfo(message) {
+            const div = document.createElement('div');
+            div.className = 'test-result test-info';
+            div.textContent = `ℹ ${message}`;
+            results.appendChild(div);
+        }
+        
+        // Run tests
+        async function runTests() {
+            logInfo('Starting infrastructure tests...');
+            
+            // Test 1: UUID Generation
+            try {
+                const uuid = generateUUID();
+                const isValid = isValidUUID(uuid);
+                logTest('UUID Generation', isValid, `Generated UUID: ${uuid}`);
+            } catch (error) {
+                logTest('UUID Generation', false, error.message);
+            }
+            
+            // Test 2: UUID Validation
+            try {
+                const validUUID = '550e8400-e29b-41d4-a716-446655440000';
+                const invalidUUID = 'not-a-uuid';
+                const test1 = isValidUUID(validUUID);
+                const test2 = !isValidUUID(invalidUUID);
+                logTest('UUID Validation', test1 && test2, 'Valid and invalid UUIDs correctly identified');
+            } catch (error) {
+                logTest('UUID Validation', false, error.message);
+            }
+            
+            // Test 3: Time Formatting
+            try {
+                const formatted = formatTime(125);
+                const expected = '2:05';
+                logTest('Time Formatting', formatted === expected, `formatTime(125) = ${formatted}`);
+            } catch (error) {
+                logTest('Time Formatting', false, error.message);
+            }
+            
+            // Test 4: File Size Formatting
+            try {
+                const formatted = formatFileSize(1536000);
+                const passed = formatted.includes('MB') || formatted.includes('KB');
+                logTest('File Size Formatting', passed, `formatFileSize(1536000) = ${formatted}`);
+            } catch (error) {
+                logTest('File Size Formatting', false, error.message);
+            }
+            
+            // Test 5: Browser Compatibility Check
+            try {
+                const compat = checkBrowserCompatibility();
+                logTest('Browser Compatibility', compat.compatible, 
+                    compat.compatible ? 'All required features supported' : `Missing: ${compat.missingFeatures.join(', ')}`);
+            } catch (error) {
+                logTest('Browser Compatibility', false, error.message);
+            }
+            
+            // Test 6: IndexedDB Initialization
+            try {
+                await StorageManager.initDB();
+                logTest('IndexedDB Initialization', true, 'Database initialized successfully');
+            } catch (error) {
+                logTest('IndexedDB Initialization', false, error.message);
+            }
+            
+            // Test 7: localStorage Preferences
+            try {
+                const prefs = StorageManager.getPreferences();
+                const hasRequiredFields = prefs.theme && prefs.volume !== undefined;
+                logTest('localStorage Preferences', hasRequiredFields, `Loaded preferences with theme: ${prefs.theme}`);
+            } catch (error) {
+                logTest('localStorage Preferences', false, error.message);
+            }
+            
+            // Test 8: Media Type Filter Storage
+            try {
+                StorageManager.saveMediaTypeFilter('audio');
+                const filter = StorageManager.getMediaTypeFilter();
+                logTest('Media Type Filter Storage', filter === 'audio', `Saved and retrieved filter: ${filter}`);
+                
+                // Reset to default
+                StorageManager.saveMediaTypeFilter('all');
+            } catch (error) {
+                logTest('Media Type Filter Storage', false, error.message);
+            }
+            
+            // Test 9: Media Item CRUD (Create, Read)
+            try {
+                const testItem = {
+                    id: generateUUID(),
+                    type: 'audio',
+                    title: 'Test Song',
+                    artist: 'Test Artist',
+                    duration: 180,
+                    fileSize: 5000000,
+                    mimeType: 'audio/mp3',
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                };
+                
+                await StorageManager.saveMediaItem(testItem);
+                const retrieved = await StorageManager.getMediaItem(testItem.id);
+                const passed = retrieved && retrieved.title === 'Test Song';
+                logTest('Media Item Storage (Create/Read)', passed, `Saved and retrieved item: ${retrieved?.title}`);
+                
+                // Cleanup
+                await StorageManager.deleteMediaItem(testItem.id);
+            } catch (error) {
+                logTest('Media Item Storage (Create/Read)', false, error.message);
+            }
+            
+            // Test 10: Playlist Storage
+            try {
+                const testPlaylists = [
+                    { id: generateUUID(), name: 'Test Playlist', itemIds: [], createdAt: Date.now(), updatedAt: Date.now() }
+                ];
+                
+                StorageManager.savePlaylists(testPlaylists);
+                const retrieved = StorageManager.getPlaylists();
+                const passed = retrieved.length > 0 && retrieved[0].name === 'Test Playlist';
+                logTest('Playlist Storage', passed, `Saved and retrieved ${retrieved.length} playlist(s)`);
+                
+                // Cleanup
+                StorageManager.savePlaylists([]);
+            } catch (error) {
+                logTest('Playlist Storage', false, error.message);
+            }
+            
+            logInfo('All tests completed!');
+        }
+        
+        // Run tests when page loads
+        runTests().catch(error => {
+            logTest('Test Suite', false, `Fatal error: ${error.message}`);
+        });
+    </script>
+</body>
+</html>

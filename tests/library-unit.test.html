@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library Manager Unit Tests</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        h1 { color: #333; }
+        .test { 
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .pass { border-left: 4px solid #28a745; }
+        .fail { border-left: 4px solid #dc3545; }
+        .test-name { font-weight: bold; margin-bottom: 5px; }
+        .test-details { color: #666; font-size: 14px; }
+        .error { color: #dc3545; margin-top: 10px; font-family: monospace; }
+        .summary {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>Library Manager Unit Tests</h1>
+    <button onclick="runTests()">Run Tests</button>
+    <div id="results"></div>
+    
+    <script src="../js/utils.js"></script>
+    <script src="../js/storage.js"></script>
+    <script src="../js/library.js"></script>
+    
+    <script>
+        const results = [];
+        
+        function addTest(name, passed, details = '', error = null) {
+            results.push({ name, passed, details, error });
+            render();
+        }
+        
+        function render() {
+            const passCount = results.filter(r => r.passed).length;
+            const failCount = results.filter(r => !r.passed).length;
+            
+            let html = `<div class="summary">
+                Tests: ${passCount} passed, ${failCount} failed, ${results.length} total
+            </div>`;
+            
+            results.forEach(r => {
+                html += `<div class="test ${r.passed ? 'pass' : 'fail'}">
+                    <div class="test-name">${r.passed ? '✓' : '✗'} ${r.name}</div>
+                    ${r.details ? `<div class="test-details">${r.details}</div>` : ''}
+                    ${r.error ? `<div class="error">${r.error}</div>` : ''}
+                </div>`;
+            });
+            
+            document.getElementById('results').innerHTML = html;
+        }
+        
+        async function runTests() {
+            results.length = 0;
+            render();
+            
+            try {
+                await StorageManager.initDB();
+                
+                // Test 1: Metadata validation
+                await testMetadataValidation();
+                
+                // Test 2: File validation
+                await testFileValidation();
+                
+                // Test 3: Poster validation
+                await testPosterValidation();
+                
+                // Test 4: Metadata extraction
+                await testMetadataExtraction();
+                
+                // Test 5: Add media file
+                await testAddMediaFile();
+                
+                // Test 6: Batch upload
+                await testBatchUpload();
+                
+                // Test 7: Update media item
+                await testUpdateMediaItem();
+                
+                // Test 8: Search functionality
+                await testSearch();
+                
+                // Test 9: Get by type
+                await testGetByType();
+                
+                // Test 10: Delete media item
+                await testDeleteMediaItem();
+                
+            } catch (error) {
+                addTest('Test Suite', false, '', error.message);
+            }
+        }
+        
+        async function testMetadataValidation() {
+            try {
+                // Valid metadata
+                const valid = LibraryManager.validateMetadata('Test Song', 'Test Artist');
+                if (!valid.valid) throw new Error('Valid metadata rejected');
+                
+                // Title too long
+                const longTitle = LibraryManager.validateMetadata('x'.repeat(201), 'Artist');
+                if (longTitle.valid) throw new Error('Long title accepted');
+                
+                // Artist too long
+                const longArtist = LibraryManager.validateMetadata('Title', 'x'.repeat(101));
+                if (longArtist.valid) throw new Error('Long artist accepted');
+                
+                addTest('Metadata Validation', true, 'Title and artist length validation works');
+            } catch (error) {
+                addTest('Metadata Validation', false, '', error.message);
+            }
+        }
+        
+        async function testFileValidation() {
+            try {
+                // Valid file
+                const validFile = new File(['test'], 'test.mp3', { type: 'audio/mpeg' });
+                const validResult = await LibraryManager.validateMediaFile(validFile);
+                // Note: May fail magic number check, but should not throw
+                
+                // Invalid format
+                const invalidFile = new File(['test'], 'test.pdf', { type: 'application/pdf' });
+                const invalidResult = await LibraryManager.validateMediaFile(invalidFile);
+                if (invalidResult.valid) throw new Error('Invalid format accepted');
+                
+                // File too large
+                const largeFile = new File(['x'.repeat(1000)], 'large.mp3', { type: 'audio/mpeg' });
+                Object.defineProperty(largeFile, 'size', { value: 600 * 1024 * 1024 });
+                const largeResult = await LibraryManager.validateMediaFile(largeFile);
+                if (largeResult.valid) throw new Error('Large file accepted');
+                
+                addTest('File Validation', true, 'Format and size validation works');
+            } catch (error) {
+                addTest('File Validation', false, '', error.message);
+            }
+        }
+        
+        async function testPosterValidation() {
+            try {
+                // Create a small valid image
+                const canvas = document.createElement('canvas');
+                canvas.width = 100;
+                canvas.height = 100;
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+                const validPoster = new File([blob], 'poster.jpg', { type: 'image/jpeg' });
+                
+                const validResult = await LibraryManager.validatePosterFile(validPoster);
+                if (!validResult.valid) throw new Error('Valid poster rejected: ' + validResult.errors.join(', '));
+                
+                // Invalid format
+                const invalidPoster = new File(['test'], 'poster.txt', { type: 'text/plain' });
+                const invalidResult = await LibraryManager.validatePosterFile(invalidPoster);
+                if (invalidResult.valid) throw new Error('Invalid poster format accepted');
+                
+                addTest('Poster Validation', true, 'Poster format and size validation works');
+            } catch (error) {
+                addTest('Poster Validation', false, '', error.message);
+            }
+        }
+        
+        async function testMetadataExtraction() {
+            try {
+                const file = new File(['test'], 'My Song.mp3', { type: 'audio/mpeg' });
+                const metadata = await LibraryManager.extractMetadata(file);
+                
+                if (!metadata.title) throw new Error('No title extracted');
+                if (!metadata.artist) throw new Error('No artist extracted');
+                if (typeof metadata.duration !== 'number') throw new Error('No duration extracted');
+                
+                // Should use filename as title
+                if (!metadata.title.includes('My Song')) {
+                    throw new Error('Title should be based on filename');
+                }
+                
+                // Should fallback to "Unknown" for artist
+                if (metadata.artist !== 'Unknown') {
+                    throw new Error('Artist should be "Unknown"');
+                }
+                
+                addTest('Metadata Extraction', true, 'Fallback to filename and "Unknown" artist works');
+            } catch (error) {
+                addTest('Metadata Extraction', false, '', error.message);
+            }
+        }
+        
+        async function testAddMediaFile() {
+            try {
+                await StorageManager.clearAllData();
+                
+                // Create a valid MP3 file with magic number
+                const header = new Uint8Array([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+                const padding = new Uint8Array(1000);
+                const blob = new Blob([header, padding], { type: 'audio/mpeg' });
+                const file = new File([blob], 'test-song.mp3', { type: 'audio/mpeg' });
+                
+                const item = await LibraryManager.addMediaFile(file);
+                
+                if (!item.id) throw new Error('No ID generated');
+                if (item.type !== 'audio') throw new Error('Wrong type');
+                if (!item.title) throw new Error('No title');
+                if (!item.posterUrl) throw new Error('No poster generated');
+                
+                // Verify it's in storage
+                const retrieved = await StorageManager.getMediaItem(item.id);
+                if (!retrieved) throw new Error('Item not in storage');
+                
+                await LibraryManager.deleteMediaItem(item.id);
+                
+                addTest('Add Media File', true, 'File added with metadata and default poster');
+            } catch (error) {
+                addTest('Add Media File', false, '', error.message);
+            }
+        }
+        
+        async function testBatchUpload() {
+            try {
+                await StorageManager.clearAllData();
+                
+                const files = [];
+                for (let i = 0; i < 3; i++) {
+                    const header = new Uint8Array([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+                    const padding = new Uint8Array(1000);
+                    const blob = new Blob([header, padding], { type: 'audio/mpeg' });
+                    files.push(new File([blob], `song-${i}.mp3`, { type: 'audio/mpeg' }));
+                }
+                
+                const items = await LibraryManager.addMediaBatch(files);
+                
+                if (items.length !== 3) throw new Error(`Expected 3 items, got ${items.length}`);
+                
+                const allItems = await StorageManager.getAllMediaItems();
+                if (allItems.length < 3) throw new Error('Not all items in storage');
+                
+                for (const item of items) {
+                    await LibraryManager.deleteMediaItem(item.id);
+                }
+                
+                addTest('Batch Upload', true, 'Multiple files uploaded successfully');
+            } catch (error) {
+                addTest('Batch Upload', false, '', error.message);
+            }
+        }
+        
+        async function testUpdateMediaItem() {
+            try {
+                await StorageManager.clearAllData();
+                
+                const header = new Uint8Array([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+                const padding = new Uint8Array(1000);
+                const blob = new Blob([header, padding], { type: 'audio/mpeg' });
+                const file = new File([blob], 'original.mp3', { type: 'audio/mpeg' });
+                
+                const item = await LibraryManager.addMediaFile(file);
+                
+                await LibraryManager.updateMediaItem(item.id, {
+                    title: 'Updated Title',
+                    artist: 'Updated Artist'
+                });
+                
+                const updated = await StorageManager.getMediaItem(item.id);
+                if (updated.title !== 'Updated Title') throw new Error('Title not updated');
+                if (updated.artist !== 'Updated Artist') throw new Error('Artist not updated');
+                
+                await LibraryManager.deleteMediaItem(item.id);
+                
+                addTest('Update Media Item', true, 'Metadata updated successfully');
+            } catch (error) {
+                addTest('Update Media Item', false, '', error.message);
+            }
+        }
+        
+        async function testSearch() {
+            try {
+                await StorageManager.clearAllData();
+                
+                const header = new Uint8Array([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+                const padding = new Uint8Array(1000);
+                
+                const items = [];
+                const titles = ['Amazing Grace', 'How Great Thou Art', 'Blessed Assurance'];
+                
+                for (const title of titles) {
+                    const blob = new Blob([header, padding], { type: 'audio/mpeg' });
+                    const file = new File([blob], `${title}.mp3`, { type: 'audio/mpeg' });
+                    const item = await LibraryManager.addMediaFile(file);
+                    await LibraryManager.updateMediaItem(item.id, { title });
+                    items.push(item);
+                }
+                
+                // Search for "grace"
+                const graceResults = await LibraryManager.searchMedia('grace');
+                if (graceResults.length !== 1) throw new Error('Grace search failed');
+                
+                // Search for "great"
+                const greatResults = await LibraryManager.searchMedia('great');
+                if (greatResults.length !== 1) throw new Error('Great search failed');
+                
+                // Empty search returns all
+                const allResults = await LibraryManager.searchMedia('');
+                if (allResults.length !== 3) throw new Error('Empty search failed');
+                
+                for (const item of items) {
+                    await LibraryManager.deleteMediaItem(item.id);
+                }
+                
+                addTest('Search Functionality', true, 'Case-insensitive search works correctly');
+            } catch (error) {
+                addTest('Search Functionality', false, '', error.message);
+            }
+        }
+        
+        async function testGetByType() {
+            try {
+                await StorageManager.clearAllData();
+                
+                // Add audio file
+                const audioHeader = new Uint8Array([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+                const audioPadding = new Uint8Array(1000);
+                const audioBlob = new Blob([audioHeader, audioPadding], { type: 'audio/mpeg' });
+                const audioFile = new File([audioBlob], 'audio.mp3', { type: 'audio/mpeg' });
+                const audioItem = await LibraryManager.addMediaFile(audioFile);
+                
+                // Add video file
+                const videoHeader = new Uint8Array([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]);
+                const videoPadding = new Uint8Array(1000);
+                const videoBlob = new Blob([videoHeader, videoPadding], { type: 'video/mp4' });
+                const videoFile = new File([videoBlob], 'video.mp4', { type: 'video/mp4' });
+                const videoItem = await LibraryManager.addMediaFile(videoFile);
+                
+                // Get audio only
+                const audioItems = await LibraryManager.getMediaByType('audio');
+                if (audioItems.length < 1) throw new Error('No audio items found');
+                
+                // Get video only
+                const videoItems = await LibraryManager.getMediaByType('video');
+                if (videoItems.length < 1) throw new Error('No video items found');
+                
+                await LibraryManager.deleteMediaItem(audioItem.id);
+                await LibraryManager.deleteMediaItem(videoItem.id);
+                
+                addTest('Get By Type', true, 'Filtering by audio/video type works');
+            } catch (error) {
+                addTest('Get By Type', false, '', error.message);
+            }
+        }
+        
+        async function testDeleteMediaItem() {
+            try {
+                await StorageManager.clearAllData();
+                
+                const header = new Uint8Array([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+                const padding = new Uint8Array(1000);
+                const blob = new Blob([header, padding], { type: 'audio/mpeg' });
+                const file = new File([blob], 'delete-me.mp3', { type: 'audio/mpeg' });
+                
+                const item = await LibraryManager.addMediaFile(file);
+                const id = item.id;
+                
+                // Verify it exists
+                let retrieved = await StorageManager.getMediaItem(id);
+                if (!retrieved) throw new Error('Item not found before delete');
+                
+                // Delete it
+                await LibraryManager.deleteMediaItem(id);
+                
+                // Verify it's gone
+                retrieved = await StorageManager.getMediaItem(id);
+                if (retrieved) throw new Error('Item still exists after delete');
+                
+                addTest('Delete Media Item', true, 'Item deleted from storage');
+            } catch (error) {
+                addTest('Delete Media Item', false, '', error.message);
+            }
+        }
+    </script>
+</body>
+</html>

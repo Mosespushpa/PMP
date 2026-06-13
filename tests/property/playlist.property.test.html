@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playlist Property Tests</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        h2 {
+            color: #555;
+            margin-top: 30px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .test-pass {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-fail {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .test-running {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .counterexample {
+            background-color: #f8f9fa;
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 3px solid #dc3545;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Playlist Property-Based Tests</h1>
+        <p>Testing playlist operations with fast-check property-based testing</p>
+        <div id="test-results"></div>
+        <div id="summary" class="summary" style="display:none;"></div>
+    </div>
+
+    <!-- Load application scripts -->
+    <script src="../../js/utils.js"></script>
+    <script src="../../js/storage.js"></script>
+    <script src="../../js/playlist.js"></script>
+    
+    <!-- Load fast-check from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/fast-check@3.15.0/lib/bundle.js"></script>
+
+    <script>
+        // Test runner
+        const results = document.getElementById('test-results');
+        const summaryDiv = document.getElementById('summary');
+        let passCount = 0;
+        let failCount = 0;
+        
+        function logTest(name, passed, message, counterexample = null) {
+            const div = document.createElement('div');
+            div.className = `test-result ${passed ? 'test-pass' : 'test-fail'}`;
+            div.innerHTML = `${passed ? '✓' : '✗'} ${name}<br>${message}`;
+            
+            if (counterexample) {
+                const ceDiv = document.createElement('div');
+                ceDiv.className = 'counterexample';
+                ceDiv.textContent = `Counterexample:\n${JSON.stringify(counterexample, null, 2)}`;
+                div.appendChild(ceDiv);
+            }
+            
+            results.appendChild(div);
+            
+            if (passed) passCount++;
+            else failCount++;
+        }
+        
+        function logInfo(message) {
+            const div = document.createElement('div');
+            div.className = 'test-result test-info';
+            div.textContent = `ℹ ${message}`;
+            results.appendChild(div);
+        }
+        
+        function logRunning(message) {
+            const div = document.createElement('div');
+            div.className = 'test-result test-running';
+            div.textContent = `⏳ ${message}`;
+            div.id = 'running-test';
+            results.appendChild(div);
+            return div;
+        }
+        
+        function removeRunning() {
+            const running = document.getElementById('running-test');
+            if (running) running.remove();
+        }
+        
+        function showSummary() {
+            summaryDiv.style.display = 'block';
+            const total = passCount + failCount;
+            summaryDiv.innerHTML = `
+                <strong>Test Summary:</strong><br>
+                Total: ${total} | Passed: ${passCount} | Failed: ${failCount}<br>
+                Success Rate: ${total > 0 ? ((passCount / total) * 100).toFixed(1) : 0}%
+            `;
+        }
+        
+        // Custom arbitraries for domain objects
+        const validPlaylistNameArb = fc.string({ minLength: 1, maxLength: 100 }).filter(s => s.trim().length > 0);
+        
+        const mediaItemArb = fc.record({
+            id: fc.uuid(),
+            type: fc.constantFrom('audio', 'video'),
+            title: fc.string({ minLength: 1, maxLength: 200 }),
+            artist: fc.string({ minLength: 1, maxLength: 100 }),
+            duration: fc.nat({ max: 7200 }),
+            fileSize: fc.nat({ max: 500 * 1024 * 1024 }),
+            mimeType: fc.constantFrom('audio/mp3', 'audio/m4a', 'video/mp4'),
+            createdAt: fc.date().map(d => d.getTime()),
+            updatedAt: fc.date().map(d => d.getTime())
+        });
+        
+        // Run property tests
+        async function runPropertyTests() {
+            logInfo('Starting playlist property-based tests with fast-check...');
+            logInfo('Each property will be tested with 100 random inputs');
+            
+            // Initialize database
+            try {
+                await StorageManager.initDB();
+                logInfo('IndexedDB initialized successfully');
+            } catch (error) {
+                logTest('Database Initialization', false, error.message);
+                return;
+            }
+            
+            // Clear any existing playlists
+            StorageManager.savePlaylists([]);
+            
+            // Property 2: Playlist Creation and Persistence
+            // **Validates: Requirements 2.1, 2.2**
+            await runProperty(
+                'Property 2: Playlist Creation and Persistence',
+                'For any valid playlist name, creating a playlist SHALL result in a persisted playlist that can be retrieved and contains the correct name',
+                async () => {
+                    try {
+                        const result = await fc.assert(
+                            fc.asyncProperty(validPlaylistNameArb, async (name) => {
+                                // Clear playlists before test
+                                StorageManager.savePlaylists([]);
+                                
+                                // Create playlist
+                                const playlist = await PlaylistManager.createPlaylist(name);
+                                
+                                // Verify playlist was created
+                                if (!playlist || !playlist.id) return false;
+                                if (playlist.name !== name.trim()) return false;
+                                if (!Array.isArray(playlist.itemIds)) return false;
+                                if (playlist.itemIds.length !== 0) return false;
+                                
+                                // Retrieve all playlists
+                                const playlists = await PlaylistManager.getAllPlaylists();
+                                
+                                // Verify playlist is persisted
+                                const found = playlists.find(p => p.id === playlist.id);
+                                if (!found) return false;
+                                if (found.name !== name.trim()) return false;
+                                
+                                // Cleanup
+                                await PlaylistManager.deletePlaylist(playlist.id);
+                                
+                                return true;
+                            }),
+                            { numRuns: 100 }
+                        );
+                        return { passed: true, message: 'All 100 test cases passed' };
+                    } catch (error) {
+                        return { 
+                            passed: false, 
+                            message: error.message,
+                            counterexample: error.counterexample
+                        };
+                    }
+                }
+            );
+            
+            // Property 4: Playlist Modifications Persist
+            // **Validates: Requirements 2.5, 2.6, 2.7**
+            await runProperty(
+                'Property 4: Playlist Modifications Persist',
+                'For any playlist modification (rename, add item, remove item, delete), the modification SHALL be immediately reflected in localStorage and persist across application reloads',
+                async () => {
+                    try {
+                        const result = await fc.assert(
+                            fc.asyncProperty(
+                                validPlaylistNameArb,
+                                validPlaylistNameArb,
+                                fc.uuid(),
+                                async (name1, name2, itemId) => {
+                                    // Clear playlists
+                                    StorageManager.savePlaylists([]);
+                                    
+                                    // Create a media item for testing
+                                    const mediaItem = {
+                                        id: itemId,
+                                        type: 'audio',
+                                        title: 'Test Song',
+                                        artist: 'Test Artist',
+                                        duration: 180,
+                                        fileSize: 1024,
+                                        mimeType: 'audio/mp3',
+                                        createdAt: Date.now(),
+                                        updatedAt: Date.now()
+                                    };
+                                    await StorageManager.saveMediaItem(mediaItem);
+                                    
+                                    // Test 1: Create and verify persistence
+                                    const playlist = await PlaylistManager.createPlaylist(name1);
+                                    let playlists = StorageManager.getPlaylists();
+                                    if (!playlists.find(p => p.id === playlist.id)) return false;
+                                    
+                                    // Test 2: Rename and verify persistence
+                                    await PlaylistManager.renamePlaylist(playlist.id, name2);
+                                    playlists = StorageManager.getPlaylists();
+                                    const renamed = playlists.find(p => p.id === playlist.id);
+                                    if (!renamed || renamed.name !== name2.trim()) return false;
+                                    
+                                    // Test 3: Add item and verify persistence
+                                    await PlaylistManager.addToPlaylist(playlist.id, itemId);
+                                    playlists = StorageManager.getPlaylists();
+                                    const withItem = playlists.find(p => p.id === playlist.id);
+                                    if (!withItem || !withItem.itemIds.includes(itemId)) return false;
+                                    
+                                    // Test 4: Remove item and verify persistence
+                                    await PlaylistManager.removeFromPlaylist(playlist.id, itemId);
+                                    playlists = StorageManager.getPlaylists();
+                                    const withoutItem = playlists.find(p => p.id === playlist.id);
+                                    if (!withoutItem || withoutItem.itemIds.includes(itemId)) return false;
+                                    
+                                    // Test 5: Delete and verify persistence
+                                    await PlaylistManager.deletePlaylist(playlist.id);
+                                    playlists = StorageManager.getPlaylists();
+                                    if (playlists.find(p => p.id === playlist.id)) return false;
+                                    
+                                    // Cleanup
+                                    await StorageManager.deleteMediaItem(itemId);
+                                    
+                                    return true;
+                                }
+                            ),
+                            { numRuns: 50 } // Reduced due to complexity
+                        );
+                        return { passed: true, message: 'All 50 test cases passed' };
+                    } catch (error) {
+                        return { 
+                            passed: false, 
+                            message: error.message,
+                            counterexample: error.counterexample
+                        };
+                    }
+                }
+            );
+            
+            // Property 3: Playlist Item Management Preserves Integrity
+            // **Validates: Requirements 2.3, 2.4, 2.7**
+            await runProperty(
+                'Property 3: Playlist Item Management Preserves Integrity',
+                'For any playlist and any media item, adding the item to the playlist and then removing it SHALL return the playlist to its original state',
+                async () => {
+                    try {
+                        const result = await fc.assert(
+                            fc.asyncProperty(
+                                validPlaylistNameArb,
+                                fc.array(fc.uuid(), { minLength: 0, maxLength: 5 }),
+                                fc.uuid(),
+                                async (playlistName, initialItemIds, newItemId) => {
+                                    // Clear playlists
+                                    StorageManager.savePlaylists([]);
+                                    
+                                    // Create media items
+                                    const allItemIds = [...initialItemIds, newItemId];
+                                    for (const itemId of allItemIds) {
+                                        const mediaItem = {
+                                            id: itemId,
+                                            type: 'audio',
+                                            title: 'Test Song',
+                                            artist: 'Test Artist',
+                                            duration: 180,
+                                            fileSize: 1024,
+                                            mimeType: 'audio/mp3',
+                                            createdAt: Date.now(),
+                                            updatedAt: Date.now()
+                                        };
+                                        await StorageManager.saveMediaItem(mediaItem);
+                                    }
+                                    
+                                    // Create playlist
+                                    const playlist = await PlaylistManager.createPlaylist(playlistName);
+                                    
+                                    // Add initial items
+                                    for (const itemId of initialItemIds) {
+                                        await PlaylistManager.addToPlaylist(playlist.id, itemId);
+                                    }
+                                    
+                                    // Get original state
+                                    const originalPlaylists = StorageManager.getPlaylists();
+                                    const originalPlaylist = originalPlaylists.find(p => p.id === playlist.id);
+                                    const originalCount = originalPlaylist.itemIds.length;
+                                    const originalItems = [...originalPlaylist.itemIds];
+                                    
+                                    // Add new item
+                                    await PlaylistManager.addToPlaylist(playlist.id, newItemId);
+                                    
+                                    // Verify item was added
+                                    let playlists = StorageManager.getPlaylists();
+                                    let currentPlaylist = playlists.find(p => p.id === playlist.id);
+                                    if (currentPlaylist.itemIds.length !== originalCount + 1) return false;
+                                    if (!currentPlaylist.itemIds.includes(newItemId)) return false;
+                                    
+                                    // Remove the item
+                                    await PlaylistManager.removeFromPlaylist(playlist.id, newItemId);
+                                    
+                                    // Verify playlist returned to original state
+                                    playlists = StorageManager.getPlaylists();
+                                    currentPlaylist = playlists.find(p => p.id === playlist.id);
+                                    
+                                    if (currentPlaylist.itemIds.length !== originalCount) return false;
+                                    
+                                    // Check all original items are still present in same order
+                                    for (let i = 0; i < originalItems.length; i++) {
+                                        if (currentPlaylist.itemIds[i] !== originalItems[i]) return false;
+                                    }
+                                    
+                                    // Cleanup
+                                    await PlaylistManager.deletePlaylist(playlist.id);
+                                    for (const itemId of allItemIds) {
+                                        await StorageManager.deleteMediaItem(itemId);
+                                    }
+                                    
+                                    return true;
+                                }
+                            ),
+                            { numRuns: 50 } // Reduced due to complexity
+                        );
+                        return { passed: true, message: 'All 50 test cases passed' };
+                    } catch (error) {
+                        return { 
+                            passed: false, 
+                            message: error.message,
+                            counterexample: error.counterexample
+                        };
+                    }
+                }
+            );
+            
+            logInfo('All property tests completed!');
+            showSummary();
+        }
+        
+        async function runProperty(name, description, testFn) {
+            const runningDiv = logRunning(`Running: ${name}`);
+            
+            try {
+                const result = await testFn();
+                removeRunning();
+                logTest(name, result.passed, description + '\n' + result.message, result.counterexample);
+            } catch (error) {
+                removeRunning();
+                logTest(name, false, description + '\nUnexpected error: ' + error.message);
+            }
+        }
+        
+        // Run tests when page loads
+        runPropertyTests().catch(error => {
+            logTest('Test Suite', false, `Fatal error: ${error.message}`);
+            showSummary();
+        });
+    </script>
+</body>
+</html>

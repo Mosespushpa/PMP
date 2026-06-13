@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Queue Property Tests</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        h2 {
+            color: #555;
+            margin-top: 30px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .test-pass {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-fail {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .test-running {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .counterexample {
+            background-color: #f8f9fa;
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 3px solid #dc3545;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Queue Property-Based Tests</h1>
+        <p>Testing queue operations with fast-check property-based testing</p>
+        <div id="test-results"></div>
+        <div id="summary" class="summary" style="display:none;"></div>
+    </div>
+
+    <!-- Load application scripts -->
+    <script src="../../js/utils.js"></script>
+    <script src="../../js/queue.js"></script>
+    
+    <!-- Load fast-check from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/fast-check@3.15.0/lib/bundle.js"></script>
+
+    <script>
+        // Test runner
+        const results = document.getElementById('test-results');
+        const summaryDiv = document.getElementById('summary');
+        let passCount = 0;
+        let failCount = 0;
+        
+        function logTest(name, passed, message, counterexample = null) {
+            const div = document.createElement('div');
+            div.className = `test-result ${passed ? 'test-pass' : 'test-fail'}`;
+            div.innerHTML = `${passed ? '✓' : '✗'} ${name}<br>${message}`;
+            
+            if (counterexample) {
+                const ceDiv = document.createElement('div');
+                ceDiv.className = 'counterexample';
+                ceDiv.textContent = `Counterexample:\n${JSON.stringify(counterexample, null, 2)}`;
+                div.appendChild(ceDiv);
+            }
+            
+            results.appendChild(div);
+            
+            if (passed) passCount++;
+            else failCount++;
+        }
+        
+        function logInfo(message) {
+            const div = document.createElement('div');
+            div.className = 'test-result test-info';
+            div.textContent = `ℹ ${message}`;
+            results.appendChild(div);
+        }
+        
+        function logRunning(message) {
+            const div = document.createElement('div');
+            div.className = 'test-result test-running';
+            div.textContent = `⏳ ${message}`;
+            div.id = 'running-test';
+            results.appendChild(div);
+            return div;
+        }
+        
+        function removeRunning() {
+            const running = document.getElementById('running-test');
+            if (running) running.remove();
+        }
+        
+        function showSummary() {
+            summaryDiv.style.display = 'block';
+            const total = passCount + failCount;
+            summaryDiv.innerHTML = `
+                <strong>Test Summary:</strong><br>
+                Total: ${total} | Passed: ${passCount} | Failed: ${failCount}<br>
+                Success Rate: ${total > 0 ? ((passCount / total) * 100).toFixed(1) : 0}%
+            `;
+        }
+        
+        // Custom arbitraries for domain objects
+        const mediaItemArb = fc.record({
+            id: fc.uuid(),
+            type: fc.constantFrom('audio', 'video'),
+            title: fc.string({ minLength: 1, maxLength: 200 }),
+            artist: fc.string({ minLength: 1, maxLength: 100 }),
+            duration: fc.nat({ max: 7200 }), // Max 2 hours
+            fileSize: fc.nat({ max: 500 * 1024 * 1024 }), // Max 500 MB
+            mimeType: fc.constantFrom('audio/mp3', 'audio/m4a', 'audio/wav', 'audio/ogg', 'video/mp4', 'video/webm', 'video/ogg'),
+            createdAt: fc.date().map(d => d.getTime()),
+            updatedAt: fc.date().map(d => d.getTime())
+        });
+        
+        // Run property tests
+        async function runPropertyTests() {
+            logInfo('Starting property-based tests with fast-check...');
+            logInfo('Each property will be tested with 100 random inputs');
+            
+            // Property 13: Queue Shuffle Preserves Items
+            // **Validates: Requirements 5.6**
+            await runProperty(
+                'Property 13: Queue Shuffle Preserves Items',
+                'For any queue, shuffling SHALL preserve the exact set of items (same count, same items) while changing their order',
+                async () => {
+                    try {
+                        const result = await fc.assert(
+                            fc.property(
+                                fc.array(mediaItemArb, { minLength: 2, maxLength: 20 }),
+                                (items) => {
+                                    // Setup queue
+                                    QueueManager.clearQueue();
+                                    QueueManager.setQueue(items);
+                                    
+                                    // Get original queue
+                                    const originalQueue = QueueManager.getQueue();
+                                    const originalCount = originalQueue.length;
+                                    const originalIds = originalQueue.map(item => item.id).sort();
+                                    
+                                    // Shuffle
+                                    QueueManager.shuffle();
+                                    
+                                    // Get shuffled queue
+                                    const shuffledQueue = QueueManager.getQueue();
+                                    const shuffledCount = shuffledQueue.length;
+                                    const shuffledIds = shuffledQueue.map(item => item.id).sort();
+                                    
+                                    // Verify same count
+                                    if (shuffledCount !== originalCount) {
+                                        return false;
+                                    }
+                                    
+                                    // Verify same items (by comparing sorted IDs)
+                                    if (shuffledIds.length !== originalIds.length) {
+                                        return false;
+                                    }
+                                    
+                                    for (let i = 0; i < originalIds.length; i++) {
+                                        if (shuffledIds[i] !== originalIds[i]) {
+                                            return false;
+                                        }
+                                    }
+                                    
+                                    // Verify shuffle is marked
+                                    if (!QueueManager.isShuffled()) {
+                                        return false;
+                                    }
+                                    
+                                    return true;
+                                }
+                            ),
+                            { numRuns: 100 }
+                        );
+                        return { passed: true, message: 'All 100 test cases passed' };
+                    } catch (error) {
+                        return { 
+                            passed: false, 
+                            message: error.message,
+                            counterexample: error.counterexample
+                        };
+                    }
+                }
+            );
+            
+            // Property 14: Queue Reordering Maintains Integrity
+            // **Validates: Requirements 5.2**
+            await runProperty(
+                'Property 14: Queue Reordering Maintains Integrity',
+                'For any queue and any valid reorder operation, the reordered queue SHALL contain the same items with the moved item at the new position',
+                async () => {
+                    try {
+                        const result = await fc.assert(
+                            fc.property(
+                                fc.array(mediaItemArb, { minLength: 2, maxLength: 20 }),
+                                fc.nat(),
+                                fc.nat(),
+                                (items, fromIdx, toIdx) => {
+                                    // Setup queue
+                                    QueueManager.clearQueue();
+                                    QueueManager.setQueue(items);
+                                    
+                                    // Get queue length
+                                    const queueLength = QueueManager.getQueue().length;
+                                    if (queueLength === 0) return true; // Skip empty queues
+                                    
+                                    // Constrain indices to valid range
+                                    const fromIndex = fromIdx % queueLength;
+                                    const toIndex = toIdx % queueLength;
+                                    
+                                    // Get original queue and item to move
+                                    const originalQueue = QueueManager.getQueue();
+                                    const itemToMove = originalQueue[fromIndex];
+                                    const originalCount = originalQueue.length;
+                                    
+                                    // Reorder
+                                    QueueManager.reorderQueue(fromIndex, toIndex);
+                                    
+                                    // Get reordered queue
+                                    const reorderedQueue = QueueManager.getQueue();
+                                    
+                                    // Verify same count
+                                    if (reorderedQueue.length !== originalCount) {
+                                        return false;
+                                    }
+                                    
+                                    // Verify moved item is at new position
+                                    if (reorderedQueue[toIndex].id !== itemToMove.id) {
+                                        return false;
+                                    }
+                                    
+                                    // Verify all items are still present
+                                    const originalIds = originalQueue.map(item => item.id).sort();
+                                    const reorderedIds = reorderedQueue.map(item => item.id).sort();
+                                    
+                                    if (originalIds.length !== reorderedIds.length) {
+                                        return false;
+                                    }
+                                    
+                                    for (let i = 0; i < originalIds.length; i++) {
+                                        if (originalIds[i] !== reorderedIds[i]) {
+                                            return false;
+                                        }
+                                    }
+                                    
+                                    // Verify relative order of other items is maintained
+                                    // (excluding the moved item)
+                                    const originalOthers = originalQueue.filter(item => item.id !== itemToMove.id);
+                                    const reorderedOthers = reorderedQueue.filter(item => item.id !== itemToMove.id);
+                                    
+                                    for (let i = 0; i < originalOthers.length; i++) {
+                                        if (originalOthers[i].id !== reorderedOthers[i].id) {
+                                            return false;
+                                        }
+                                    }
+                                    
+                                    return true;
+                                }
+                            ),
+                            { numRuns: 100 }
+                        );
+                        return { passed: true, message: 'All 100 test cases passed' };
+                    } catch (error) {
+                        return { 
+                            passed: false, 
+                            message: error.message,
+                            counterexample: error.counterexample
+                        };
+                    }
+                }
+            );
+            
+            // Property 15: Queue Item Removal
+            // **Validates: Requirements 5.4**
+            await runProperty(
+                'Property 15: Queue Item Removal',
+                'For any queue and any item in the queue, removing the item SHALL result in a queue with count decreased by one and the removed item no longer present',
+                async () => {
+                    try {
+                        const result = await fc.assert(
+                            fc.property(
+                                fc.array(mediaItemArb, { minLength: 1, maxLength: 20 }),
+                                fc.nat(),
+                                (items, idxToRemove) => {
+                                    // Setup queue
+                                    QueueManager.clearQueue();
+                                    QueueManager.setQueue(items);
+                                    
+                                    // Get queue length
+                                    const originalQueue = QueueManager.getQueue();
+                                    const queueLength = originalQueue.length;
+                                    if (queueLength === 0) return true; // Skip empty queues
+                                    
+                                    // Constrain index to valid range
+                                    const indexToRemove = idxToRemove % queueLength;
+                                    
+                                    // Get item to remove
+                                    const itemToRemove = originalQueue[indexToRemove];
+                                    const originalCount = originalQueue.length;
+                                    
+                                    // Remove item
+                                    QueueManager.removeFromQueue(indexToRemove);
+                                    
+                                    // Get updated queue
+                                    const updatedQueue = QueueManager.getQueue();
+                                    
+                                    // Verify count decreased by one
+                                    if (updatedQueue.length !== originalCount - 1) {
+                                        return false;
+                                    }
+                                    
+                                    // Verify removed item is no longer present
+                                    const removedItemStillExists = updatedQueue.some(item => item.id === itemToRemove.id);
+                                    if (removedItemStillExists) {
+                                        return false;
+                                    }
+                                    
+                                    return true;
+                                }
+                            ),
+                            { numRuns: 100 }
+                        );
+                        return { passed: true, message: 'All 100 test cases passed' };
+                    } catch (error) {
+                        return { 
+                            passed: false, 
+                            message: error.message,
+                            counterexample: error.counterexample
+                        };
+                    }
+                }
+            );
+            
+            logInfo('All property tests completed!');
+            showSummary();
+        }
+        
+        async function runProperty(name, description, testFn) {
+            const runningDiv = logRunning(`Running: ${name}`);
+            
+            try {
+                const result = await testFn();
+                removeRunning();
+                logTest(name, result.passed, description + '\n' + result.message, result.counterexample);
+            } catch (error) {
+                removeRunning();
+                logTest(name, false, description + '\nUnexpected error: ' + error.message);
+            }
+        }
+        
+        // Run tests when page loads
+        runPropertyTests().catch(error => {
+            logTest('Test Suite', false, `Fatal error: ${error.message}`);
+            showSummary();
+        });
+    </script>
+</body>
+</html>
