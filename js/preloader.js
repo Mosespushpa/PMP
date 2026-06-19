@@ -430,3 +430,24 @@ const MediaPreloader = (function() {
         isAlreadyPreloaded
     };
 })();
+// ✅ PUBLIC METHOD
+return {
+  getAllMedia: function () {
+    const allItems = [];
+
+    for (const key in PREDEFINED_MEDIA) {
+      const group = PREDEFINED_MEDIA[key];
+
+      group.items.forEach(item => {
+        allItems.push({
+          ...item,
+          folder: group.folder,
+          playlist: group.playlist
+        });
+      });
+    }
+
+    return allItems;
+  }
+};
+})();
